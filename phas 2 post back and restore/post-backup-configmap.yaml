@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gocd-postbackup-script
+  namespace: gocd
+data:
+  gocd-postbackup.sh: |
+    #!/bin/bash
+
+    # Default values
+    BACKUP_DIR="/go-working-dir/artifacts/serverBackups"
+
+    # Ensure environment variables are set; exit if not
+    if [ -z "$BACKUP_S3_BUCKET" ] || [ -z "$BACKUP_AWS_REGION" ]; then
+        echo "Error: BACKUP_S3_BUCKET and BACKUP_AWS_REGION environment variables must be set!"
+        exit 1
+    fi
+
+    S3_BUCKET="$BACKUP_S3_BUCKET"
+    AWS_REGION="$BACKUP_AWS_REGION"
+
+    echo "Using S3 Bucket: $S3_BUCKET"
+    echo "Using AWS Region: $AWS_REGION"
+
+    # Find the latest backup folder
+    LATEST_BACKUP=$(ls -td $BACKUP_DIR/backup_* 2>/dev/null | head -n1)
+
+    if [ -z "$LATEST_BACKUP" ]; then
+        echo "No backup found!"
+        exit 1
+    fi
+
+    echo "Latest backup found: $LATEST_BACKUP"
+
+    # Upload the entire backup folder to S3
+    aws s3 cp "$LATEST_BACKUP" "s3://$S3_BUCKET/$(basename $LATEST_BACKUP)" --recursive --region "$AWS_REGION"
+
+    if [ $? -eq 0 ]; then
+        echo "Backup uploaded successfully!"
+    else
+        echo "Backup upload failed!"
+        exit 1
+    fi

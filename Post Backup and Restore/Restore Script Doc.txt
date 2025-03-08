@@ -1,0 +1,166 @@
+Restoring GoCD Backup from AWS S3 to GoCD Server
+
+Overview
+
+This documentation provides a step-by-step guide on restoring GoCD backups from AWS S3 to a GoCD server running on Minikube. It includes creating a dummy pipeline, performing a backup, restoring it using a script, and restarting the GoCD server.
+
+1. Create a Dummy Pipeline
+
+1.1 Login to GoCD UI: Open the GoCD UI in your browser.
+
+1.2 Navigate to Pipelines: Click on "Pipelines" and create a new pipeline named DEMO.
+
+1.3 Configure the Pipeline: Set up a dummy stage and job with any task (e.g., simple shell command).
+
+1.4 Save and Run the Pipeline: Ensure the pipeline is created and runs successfully.
+
+
+2. Perform a GoCD Backup
+
+2.1 Go to Admin Panel: In the GoCD UI, navigate to Admin -> Backup.
+
+2.2 Click 'Perform Backup': This creates a backup of the GoCD configuration and database.
+
+2.3 Verify S3 Upload:
+
+Check if the backup is uploaded to S3 using AWS CLI:
+
+-   aws s3 ls s3://gocd-backups-demo/
+
+Ensure a new backup folder is created (e.g., backup_YYYYMMDD-HHMMSS/).
+
+3. Delete the Dummy Pipeline
+
+3.1 Go to Admin Panel: Navigate to Admin -> Pipelines.
+
+3.2 Delete the 'DEMO' Pipeline: Remove the pipeline from the GoCD UI.
+
+3.3 Verify Deletion: Ensure the pipeline no longer appears in the UI.
+
+
+
+
+4: Access the GoCD Server and Verify Backup Directory
+
+4.1 Get GoCD Server Pod Name:
+
+-   kubectl get pods -n gocd
+
+4.2 Access GoCD Server Container:
+
+-   kubectl exec -it <gocd-server-pod-name> -n gocd -- /bin/bash
+
+4.3 Navigate to the Backup Directory:
+
+-   ls -l /godata/config
+
+
+
+5: Create and Configure the Restore Script
+
+5.1 Create the Restore Script:
+
+-   vi /godata/restore-backup.sh
+
+5.2 Insert the Following Script Content:(Modify according to your configuration)
+ 
+#!/bin/bash
+
+set -e  # Exit on any error
+
+echo "Checking S3 bucket contents..."
+LATEST_BACKUP=$(aws s3 ls s3://gocd-backups-demo/ | awk '{print $2}' | sort | tail -n 1 | tr -d '/')
+echo "Found latest backup: $LATEST_BACKUP"
+
+echo "Downloading $LATEST_BACKUP from S3..."
+aws s3 cp --recursive s3://gocd-backups-demo/$LATEST_BACKUP /tmp/$LATEST_BACKUP
+
+echo "Backup downloaded to /tmp/$LATEST_BACKUP"
+
+echo "Restoring backup..."
+unzip -o /tmp/$LATEST_BACKUP/config-dir.zip -d /godata/config/
+unzip -o /tmp/$LATEST_BACKUP/db.zip -d /godata/db/
+unzip -o /tmp/$LATEST_BACKUP/wrapper-config-dir.zip -d /godata/
+
+echo "Backup restored successfully!"
+
+echo ".... IMPORTANT: Restart the GoCD Server manually to apply changes!"
+echo "Run this command from your local machine:"
+echo ""
+echo "kubectl delete pod -n gocd <your-gocd-server-name>"
+echo ""
+echo "Then wait for the server to restart and check the UI."
+
+
+5.3 Save and Exit (Press ESC, type :wq, and press Enter).
+
+5.4 Make the Script Executable:
+
+-   chmod +x /godata/restore-backup.sh
+
+6. Run the Restore Script
+
+6.1 Execute the Restore Script:
+
+-  /godata/restore-backup.sh
+
+6.2 Verify Restoration Output:
+
+The script should download and extract the backup files.
+
+Check for a success message: Backup restored successfully!
+
+
+7. Restart GoCD Server
+
+7.1 Exit the GoCD Server Container:
+
+-   exit
+
+7.2 Restart the GoCD Server Pod:
+
+-   kubectl delete pod -n gocd <your-gocd-server-name>
+
+7.3 Wait for GoCD Server to Restart:
+
+-   kubectl get pods -n gocd
+
+Ensure the new GoCD server pod is running.(Usually takes 5 min)
+
+
+
+8. Verify Restored Pipeline in GoCD UI
+
+8.1 Login to GoCD UI.
+
+8.2 Check Pipelines: Ensure the DEMO pipeline is restored and visible.
+
+8.3 Run the Pipeline: Execute the pipeline to confirm it works correctly.
+
+
+
+9. Conclusion
+
+This guide provides a structured approach to restoring GoCD backups from AWS S3, ensuring that deleted pipelines and configurations are successfully recovered. By following these steps, you can efficiently restore your GoCD server without data loss.
+
+
+10. Best Practices
+
+10.1 Schedule Regular Backups: Automate the backup process for consistent data protection.
+
+10.2 Verify Backups: Regularly check the S3 bucket to ensure backups are being stored correctly.
+
+10.3 Test Restores: Periodically restore backups in a test environment to ensure the process works smoothly.
+
+
+
+
+
+
+
+
+
+
+
+
+

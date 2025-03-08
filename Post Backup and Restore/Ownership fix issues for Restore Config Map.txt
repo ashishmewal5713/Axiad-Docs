@@ -1,0 +1,70 @@
+backup_20250303-081457  backup_20250303-105712  backup_20250303-142946  backup_20250303-213719  backup_20250304-000914
+bash-5.2$ cat backup_20250304-000914
+cat: read error: Is a directory
+bash-5.2$ ls -l /godata/backups/backup_20250304-000914
+total 92
+-rw-r--r--    1 root     root          9868 Mar  4 05:09 config-dir.zip
+-rw-r--r--    1 root     root         23180 Mar  4 05:09 config-repo.zip
+-rw-r--r--    1 root     root         41996 Mar  4 05:09 db.zip
+-rw-r--r--    1 root     root            55 Mar  4 05:09 version.txt
+-rw-r--r--    1 root     root          4629 Mar  4 05:09 wrapper-config-dir.zip
+bash-5.2$ unzip -o /godata/backups/backup_20250305-005256/config-dir.zip -d /godata/config/
+Archive:  /godata/backups/backup_20250304-000914/config-dir.zip
+  inflating: go_update_server.pub
+  inflating: cruise-config.xsd
+  inflating: logback-include.xml
+  inflating: jetty.xml
+  inflating: cruise-config.xml
+  inflating: cipher.aes
+
+
+-rw-r--r--    1 go       root          1296 Mar  4 17:59 logback-include.xml
+-rw-r--r--    1 go       root          3870 Mar  4 17:59 jetty.xml
+-rw-r--r--    1 go       root           799 Mar  4 17:59 go_update_server.pub
+-rw-r--r--    1 go       root            32 Mar  4 17:59 cipher.aes
+-rw-r--r--    1 go       root         47437 Mar  5 05:59 cruise-config.xsd
+-rw-r--r--    1 go       root          2688 Mar  5 06:00 cruise-config.xml
+
+
+Restoring GoCD Backup from S3...
+Latest backup found: backup_20250304-033901/
+Downloading latest backup: backup_20250304-033901 from S3...
+download: s3://gocd-backups-demo/backup_20250304-033901/config-dir.zip to godata/backups/backup_20250304-033901/config-dir.zip
+download: s3://gocd-backups-demo/backup_20250304-033901/wrapper-config-dir.zip to godata/backups/backup_20250304-033901/wrapper-config-dir.zip
+download: s3://gocd-backups-demo/backup_20250304-033901/version.txt to godata/backups/backup_20250304-033901/version.txt
+download: s3://gocd-backups-demo/backup_20250304-033901/config-repo.zip to godata/backups/backup_20250304-033901/config-repo.zip
+download: s3://gocd-backups-demo/backup_20250304-033901/db.zip to godata/backups/backup_20250304-033901/db.zip
+Restoring backup to /godata...
+Restoring backup...
+Archive:  /godata/backups/backup_20250304-033901/config-dir.zip
+  inflating: /godata/config/go_update_server.pub
+  inflating: /godata/config/cruise-config.xsd
+  inflating: /godata/config/logback-include.xml
+  inflating: /godata/config/jetty.xml
+  inflating: /godata/config/cruise-config.xml
+  inflating: /godata/config/cipher.aes
+Archive:  /godata/backups/backup_20250304-033901/db.zip
+  inflating: /godata/db/cruise.mv.db
+Archive:  /godata/backups/backup_20250304-033901/wrapper-config-dir.zip
+  inflating: /godata/wrapper.conf
+  inflating: /godata/wrapper-properties.conf
+Restarting GoCD Server...
+
+
+
+
+
+
+
+Restore script # Config-repo.zip:-
+
+If in future suppose if we have to add the condition so that it will check for config-repo is present then only unzip it so use below for that 
+
+if [ -f "$BACKUP_DIR/$LATEST_BACKUP/config-repo.zip" ]; then
+        echo "Restoring config-repo.zip..."
+        unzip -o $BACKUP_DIR/$LATEST_BACKUP/config-repo.zip -d /godata/db/config.git/
+        chown -R go:root /godata/db/config.git/
+        chmod -R 775 /godata/db/config.git/
+    else
+        echo "No config-repo.zip found, skipping..."
+    fi

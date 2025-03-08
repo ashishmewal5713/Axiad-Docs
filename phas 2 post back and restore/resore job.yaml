@@ -1,0 +1,57 @@
+{{- if .Values.restoreJob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gocd-restore-job
+  namespace: gocd
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: gocd-restore
+          image: "{{ .Values.restoreJob.image }}"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Starting GoCD restore job..."
+              echo "S3 Bucket: $BACKUP_S3_BUCKET"
+              echo "AWS Region: $BACKUP_AWS_REGION"
+              /godata/scripts/gocd-restore.sh
+          env:
+            {{- range .Values.gocd.server.env.extraEnvVars }}
+            {{- if eq .name "BACKUP_S3_BUCKET" }}
+            - name: BACKUP_S3_BUCKET
+              value: "{{ .value }}"
+            {{- end }}
+            {{- if eq .name "BACKUP_AWS_REGION" }}
+            - name: BACKUP_AWS_REGION
+              value: "{{ .value }}"
+            {{- end }}
+            {{- end }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+          volumeMounts:
+            - name: gocd-restore-script-volume
+              mountPath: /godata/scripts
+              readOnly: true
+            - name: goserver-vol
+              mountPath: /godata
+              subPath: godata
+      volumes:
+        - name: gocd-restore-script-volume
+          configMap:
+            name: gocd-restore-script
+            defaultMode: 0777
+        - name: goserver-vol
+          persistentVolumeClaim:
+            claimName: gocd-server
+{{- end }}

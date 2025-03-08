@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gocd-restore-script
+data:
+  gocd-restore.sh: |
+    #!/bin/sh
+    set -e
+
+    echo "Restoring GoCD Backup from S3..."
+
+    BACKUP_S3_BUCKET="${BACKUP_S3_BUCKET}"
+    BACKUP_AWS_REGION="${BACKUP_AWS_REGION}"
+    BACKUP_DIR="/godata/backups"
+  
+  
+    if [ -z "$BACKUP_S3_BUCKET" ] || [ -z "$BACKUP_AWS_REGION" ]; then
+        echo "Error: BACKUP_S3_BUCKET and BACKUP_AWS_REGION environment variables must be set!"
+        exit 1
+    fi
+    mkdir -p $BACKUP_DIR
+
+    # Get the latest backup folder from S3
+    LATEST_BACKUP=$(aws s3 ls s3://$BACKUP_S3_BUCKET/ | sort | tail -n 1 | awk '{print $2}')
+
+    if [ -z "$LATEST_BACKUP" ]; then
+        echo "No backup found in S3. Exiting..."
+        exit 1
+    fi
+
+    echo "Latest backup found: $LATEST_BACKUP"
+
+    # Remove trailing slash from folder name
+    LATEST_BACKUP=$(echo "$LATEST_BACKUP" | sed 's:/*$::')
+
+    echo "Downloading latest backup: $LATEST_BACKUP from S3..."
+
+    aws s3 cp --recursive s3://$BACKUP_S3_BUCKET/$LATEST_BACKUP $BACKUP_DIR/$LATEST_BACKUP --region "$BACKUP_AWS_REGION"
+
+    echo "Restoring backup to /godata..."
+
+    unzip -o $BACKUP_DIR/$LATEST_BACKUP/config-dir.zip -d /godata/config/
+    unzip -o $BACKUP_DIR/$LATEST_BACKUP/wrapper-config-dir.zip -d /godata/config/
+    unzip -o $BACKUP_DIR/$LATEST_BACKUP/db.zip -d /godata/db/
+    unzip -o $BACKUP_DIR/$LATEST_BACKUP/config-repo.zip -d /godata/db/config.git/
+    chown -R go:root /godata/config/ /godata/db/ /godata/db/config.git/
+    chmod -R 775 /godata/config/ /godata/db/ /godata/db/config.git/
+  
+
+

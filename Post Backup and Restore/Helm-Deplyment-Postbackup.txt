@@ -1,0 +1,245 @@
+Step-by-Step Guide for Configuring GoCD Post-Backup Script with Helm and AWS S3
+
+
+1. Prerequisites
+
+Before starting, ensure you have the following:
+
+a) Helm Installed on your system
+b) Minikube (or a Kubernetes cluster) running
+c) AWS CLI Installed on your machine
+d) A Bitbucket repository containing the Helm charts (provided by the client)
+e) A Docker image with AWS CLI pre-installed
+
+
+2. Clone the Client-Provided Helm Chart from Bitbucket
+
+a) Open PowerShell and navigate to a directory where you want to clone the repository:
+
+-   cd C:\Users\Ashish Mewal\Desktop\
+
+b) Clone the repository:
+
+-   git clone https://ashishmewal@bitbucket.org/axiadids/conductor-infra-charts.git
+
+c) Move into the Helm chart directory:
+
+-   cd conductor-infra-charts\gocd
+
+
+3. Install Helm Chart for GoCD:
+
+a) Ensure you're in the gocd directory and install the Helm chart using:
+
+-   helm install gocd . -n gocd --create-namespace
+
+b) Verify that GoCD pods are running:
+
+-   kubectl get pods -n gocd
+
+Output should show:
+
+NAME                                  READY   STATUS    RESTARTS   AGE
+gocd-server-xxxxx                     1/1     Running   0          xxm
+gocd-agent-xxxxx                      1/1     Running   0          xxm
+
+
+4. Create a Kubernetes ConfigMap for the Post-Backup Script
+
+a) Create a file called "gocd-postbackup-configmap.yaml" inside the gocd>>template directory.
+
+b) Add the following content:
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gocd-postbackup-script
+  namespace: gocd
+data:
+  gocd-postbackup.sh: |
+    #!/bin/bash
+
+    # Default values
+    BACKUP_DIR="/go-working-dir/artifacts/serverBackups"
+    S3_BUCKET="${1:-gocd-backups-demo}"  # Parameter 1, default: gocd-backups-demo
+    AWS_REGION="${2:-us-east-1}"         # Parameter 2, default: us-east-1
+
+    echo "Using S3 Bucket: $S3_BUCKET"
+    echo "Using AWS Region: $AWS_REGION"
+
+    # Find the latest backup folder
+    LATEST_BACKUP=$(ls -td $BACKUP_DIR/backup_* | head -n1)
+
+    if [ -z "$LATEST_BACKUP" ]; then
+        echo "No backup found!"
+        exit 1
+    fi
+
+    echo "Latest backup found: $LATEST_BACKUP"
+
+    # Upload the entire backup folder to S3
+    aws s3 cp "$LATEST_BACKUP" "s3://$S3_BUCKET/$(basename $LATEST_BACKUP)" --recursive --region "$AWS_REGION"
+
+    if [ $? -eq 0 ]; then
+        echo "Backup uploaded successfully!"
+    else
+        echo "Backup upload failed!"
+        exit 1
+    fi
+
+
+c) save ConfigMap to Kubernetes:
+
+
+5. Modify values.yaml to Mount the ConfigMap and Execute the Script:
+
+a) Open values.yaml and Add the following content:
+
+# Default values for gocd.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+nameOverride: ""
+fullnameOverride: ""
+
+gocd:
+  server:
+    ingress:
+      enabled: false
+    env:
+      extraEnvVars:
+        - name: GOCD_PLUGIN_INSTALL_kubernetes-elastic-agents
+          value: https://github.com/gocd/kubernetes-elastic-agents/releases/download/v4.1.0-643/kubernetes-elastic-agent-4.1.0-643.jar
+        - name: GOCD_PLUGIN_INSTALL_docker-registry-artifact-plugin
+          value: https://github.com/gocd/docker-registry-artifact-plugin/releases/download/v1.4.0-850/docker-registry-artifact-plugin-1.4.0-850.jar
+        - name: GOCD_PLUGIN_INSTALL_keycloak-oauth-authorization-plugin
+          value: https://github.com/klinux/gocd-keycloak-oauth-authorization-plugin/releases/download/v2.0.0-21-exp/keycloak-oauth-authorization-plugin-2.0.0-21.jar
+        - name: GOCD_PLUGIN_INSTALL_aws-based-secrets-plugin
+          value: https://github.com/gocd/gocd-aws-based-secrets-plugin/releases/download/v1.1.0-500-exp/gocd-aws-based-secrets-plugin-1.1.0-500.jar
+
+    persistence:
+      extraVolumes:
+        - name: gocd-postbackup-script-volume
+          configMap:
+            name: gocd-postbackup-script
+            defaultMode: 0777
+
+      extraVolumeMounts:
+        - name: gocd-postbackup-script-volume
+          mountPath: /tmp/gocd-postbackup
+          readOnly: true
+        - name: goserver-vol  
+          mountPath: /godata
+          subPath: godata  
+
+    initContainers:
+      - name: copy-postbackup-script
+        image: busybox
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            mkdir -p /godata/scripts
+            if [ -f /tmp/gocd-postbackup/gocd-postbackup.sh ]; then
+              cp /tmp/gocd-postbackup/gocd-postbackup.sh /godata/scripts/gocd-postbackup.sh
+              chmod +x /godata/scripts/gocd-postbackup.sh
+            else
+              echo "Script not found in /tmp/gocd-postbackup/"
+            fi
+        volumeMounts:
+          - name: gocd-postbackup-script-volume
+            mountPath: /tmp/gocd-postbackup
+          - name: goserver-vol  
+            mountPath: /godata
+            subPath: godata  
+
+postBackupScript:
+  enabled: true
+  configMapName: gocd-postbackup-script
+
+
+6. Upgrade the Helm Chart
+
+a) Run the following command:
+
+-   helm upgrade gocd . -n gocd
+
+
+7. Verify That the Script Was Copied to GoCD Server
+
+a) Access the GoCD server pod:
+
+-   kubectl exec -it <your-gocd-server> -- /bin/bash
+
+b) Navigate to the scripts directory:
+
+-   cd /godata/scripts
+
+c) Verify that the script exists:
+
+-   ls
+
+d) You should see:
+
+-   gocd-postbackup.sh
+
+
+8. Ensure AWS CLI Is Installed in GoCD Server
+
+a) Edit the GoCD server deployment:
+
+-   kubectl edit deployment gocd-server -n gocd
+
+b) Change the image to your custom Docker image with AWS CLI installed: 
+
+-   image: ashishmewal29062000/gocd-server-awscli:latest
+
+c) Save the file and exit.
+
+d) This change will restart the GoCD server pod with AWS CLI pre-installed.
+
+e) Verify by running:
+
+-   kubectl exec -it <yor-gocd-server> -n gocd -- aws --version
+
+
+9. Configure GoCD Post-Backup Script in UI
+
+a) Open GoCD UI.
+
+b) Go to Admin → Backup → Configure Backup Settings.
+
+c) In the Post Backup Script Path, enter:
+
+-   /godata/scripts/gocd-postbackup.sh
+
+d) Click Save
+
+
+10. Perform a Backup and Verify S3 Upload
+
+a) In GoCD UI, go to Admin → Backup.
+
+b)Click Perform Backup.
+
+c)Check the AWS S3 bucket to confirm the backup was uploaded:
+
+
+
+
+***Conclusion
+
+a) We successfully installed GoCD using the client's Helm chart.
+
+b) Created a Kubernetes ConfigMap to store the post-backup script.
+
+c) Mounted the script into GoCD using extraVolumes and extraVolumeMounts.
+
+d) Copied the script using initContainers.
+
+e) Ensured AWS CLI was available in the GoCD server pod.
+
+f) Configured GoCD to execute the script after backups.
+
+g) Successfully tested backups and uploads to S3.
+
+

@@ -1,0 +1,62 @@
+# Default values for gocd.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+nameOverride: ""
+fullnameOverride: ""
+
+gocd:
+  server:
+    ingress:
+      enabled: false
+    env:
+      extraEnvVars:
+        - name: GIT_SSH_COMMAND
+          value: ssh -o StrictHostKeyChecking=no -i /mnt/ssh/bitbucket.key
+        - name: GOCD_PLUGIN_INSTALL_kubernetes-elastic-agents
+          value: https://github.com/gocd/kubernetes-elastic-agents/releases/download/v4.1.0-643/kubernetes-elastic-agent-4.1.0-643.jar
+        - name: GOCD_PLUGIN_INSTALL_docker-registry-artifact-plugin
+          value: https://github.com/gocd/docker-registry-artifact-plugin/releases/download/v1.4.0-850/docker-registry-artifact-plugin-1.4.0-850.jar
+        - name: GOCD_PLUGIN_INSTALL_keycloak-oauth-authorization-plugin
+          value: https://github.com/klinux/gocd-keycloak-oauth-authorization-plugin/releases/download/v2.0.0-21-exp/keycloak-oauth-authorization-plugin-2.0.0-21.jar
+        - name: GOCD_PLUGIN_INSTALL_aws-based-secrets-plugin
+          value: https://github.com/gocd/gocd-aws-based-secrets-plugin/releases/download/v1.1.0-500-exp/gocd-aws-based-secrets-plugin-1.1.0-500.jar
+        - name: BACKUP_S3_BUCKET
+          value: gocd-backups-demo
+        - name: BACKUP_AWS_REGION
+          value: us-east-1
+    persistence:
+      extraVolumeMounts:
+        - name: gocd-postbackup-script-volume
+          mountPath: /tmp/gocd-postbackup
+          readOnly: true
+      extraVolumes:
+        - name: gocd-postbackup-script-volume
+          configMap:
+            name: gocd-postbackup-script
+            defaultMode: 0777
+    initContainers:
+      - name: copy-postbackup-script
+        image: busybox
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            mkdir -p /godata/scripts
+            if [ -f /tmp/gocd-postbackup/gocd-postbackup.sh ]; then
+              cp /tmp/gocd-postbackup/gocd-postbackup.sh /godata/scripts/gocd-postbackup.sh
+              chmod +x /godata/scripts/gocd-postbackup.sh
+            else
+              echo "Script not found in /tmp/gocd-postbackup/"
+            fi
+        volumeMounts:
+          - name: gocd-postbackup-script-volume
+            mountPath: /tmp/gocd-postbackup
+          - name: goserver-vol  
+            mountPath: /godata
+            subPath: godata  
+
+
+restoreJob:
+  enabled: true  # This flag controls whether the restore job runs or not
+  image: ashishmewal29062000/gocd-server-awscli:latest
+
